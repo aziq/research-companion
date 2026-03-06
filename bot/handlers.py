@@ -1,6 +1,6 @@
 import logging
-import os
 import tempfile
+from pathlib import Path
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -65,7 +65,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Analyzing...")
         await _analyze_and_reply(update, text, source="voice_memo")
     finally:
-        os.unlink(path)
+        Path(path).unlink(missing_ok=True)
 
 
 # --- Audio files ---
@@ -86,7 +86,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Analyzing...")
         await _analyze_and_reply(update, text, source=audio.file_name or "audio")
     finally:
-        os.unlink(path)
+        Path(path).unlink(missing_ok=True)
 
 
 # --- Video & video notes ---
@@ -106,7 +106,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Analyzing...")
         await _analyze_and_reply(update, text, source="video")
     finally:
-        os.unlink(path)
+        Path(path).unlink(missing_ok=True)
 
 
 # --- Photos (GPT-4o-mini vision) ---
@@ -127,7 +127,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Analyzing...")
         await _analyze_and_reply(update, text, source="photo")
     finally:
-        os.unlink(path)
+        Path(path).unlink(missing_ok=True)
 
 
 # --- Documents (PDF, text files, audio attachments) ---
@@ -168,4 +168,4 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text("Analyzing...")
         await _analyze_and_reply(update, text, source=name)
     finally:
-        os.unlink(path)
+        Path(path).unlink(missing_ok=True)

@@ -4,6 +4,7 @@ import re
 from urllib.parse import urlparse
 
 import httpx
+import requests
 import trafilatura
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ def _tweet_id_from_url(url: str) -> str | None:
 
 def _fxtwitter_fetch(tweet_id: str) -> dict | None:
     """Fetch tweet data from the fxtwitter community API (free, no auth)."""
-    import requests
+
     try:
         resp = requests.get(
             f"https://api.fxtwitter.com/status/{tweet_id}",
@@ -52,7 +53,7 @@ def _fxtwitter_fetch(tweet_id: str) -> dict | None:
 
 def _syndication_fetch(tweet_id: str) -> dict | None:
     """Fetch via X's own syndication API (used for embedded tweets, free, no auth)."""
-    import requests
+
     try:
         resp = requests.get(
             f"https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&token=0",
@@ -151,11 +152,11 @@ async def fetch_url(url: str) -> dict:
     domain = urlparse(url).netloc.lower()
 
     if any(d in domain for d in ("youtube.com", "youtu.be")):
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _youtube_transcript, url)
 
     if any(d in domain for d in ("twitter.com", "x.com", "t.co")):
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _fetch_tweet, url)
 
     return await _generic_fetch(url)

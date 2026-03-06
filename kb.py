@@ -3,66 +3,55 @@
 Knowledge base CLI.
 
 Usage:
-    python kb.py              # list all items (id + source)
+    python kb.py              # list all items (id + source + date)
     python kb.py <id>         # show full analysis for item
     python kb.py search <q>   # search source + analysis
     python kb.py delete <id>  # delete an item
 """
 
-import sqlite3
 import sys
 
-DB_PATH = "research.db"
+from bot.db import get_all_items, get_item, search_items, delete_item
+
 WIDTH = 80
 
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def cmd_list():
-    with get_conn() as conn:
-        rows = conn.execute("SELECT id, url FROM items ORDER BY id DESC").fetchall()
+    rows = get_all_items()
     if not rows:
         print("No items in knowledge base yet.")
         return
-    print(f"\n{'ID':>4}  SOURCE")
+    print(f"\n{'ID':>4}  {'DATE':<20}  SOURCE")
     print("-" * WIDTH)
     for r in rows:
-        source = (r["url"] or "")[:WIDTH - 8]
-        print(f"{r['id']:>4}  {source}")
+        date = (r["created_at"] or "")[:16]
+        source = (r["url"] or "")[:WIDTH - 30]
+        print(f"{r['id']:>4}  {date:<20}  {source}")
     print(f"\n{len(rows)} item(s). Run `python kb.py <id>` to read one.")
 
 
 def cmd_show(item_id: int):
-    with get_conn() as conn:
-        row = conn.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+    row = get_item(item_id)
     if not row:
         print(f"No item with id {item_id}.")
         return
     print(f"\n{'─' * WIDTH}")
     print(f"  #{row['id']}  {row['url']}")
+    print(f"  {row['created_at']}")
     print(f"{'─' * WIDTH}\n")
     print(row["analysis"] or "")
     print()
 
 
 def cmd_search(query: str):
-    pattern = f"%{query}%"
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT id, url, analysis FROM items WHERE url LIKE ? OR analysis LIKE ? ORDER BY id DESC",
-            (pattern, pattern),
-        ).fetchall()
+    rows = search_items(query)
     if not rows:
         print(f"No results for '{query}'.")
         return
     print(f"\n{len(rows)} match(es) for '{query}':\n")
     for r in rows:
-        print(f"  #{r['id']:>4}  {(r['url'] or '')[:WIDTH - 10]}")
-        # Show the first matching snippet from analysis
+        date = (r["created_at"] or "")[:16]
+        print(f"  #{r['id']:>4}  {date}  {(r['url'] or '')[:WIDTH - 30]}")
         analysis = r["analysis"] or ""
         idx = analysis.lower().find(query.lower())
         if idx >= 0:
@@ -73,8 +62,7 @@ def cmd_search(query: str):
 
 
 def cmd_delete(item_id: int):
-    with get_conn() as conn:
-        conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
+    delete_item(item_id)
     print(f"Deleted item #{item_id}.")
 
 

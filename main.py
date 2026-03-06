@@ -40,23 +40,23 @@ def run_polling() -> None:
 
 def build_webhook_app():
     """Build the FastAPI app for webhook mode (production)."""
+    from contextlib import asynccontextmanager
     from fastapi import FastAPI, Request, Response
 
-    app = FastAPI()
     telegram_app = build_application(TOKEN)
 
-    @app.on_event("startup")
-    async def startup() -> None:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
         await telegram_app.initialize()
         webhook_endpoint = f"{WEBHOOK_URL.rstrip('/')}/webhook"
         await telegram_app.bot.set_webhook(webhook_endpoint)
         logger.info(f"Webhook set to {webhook_endpoint}")
         await telegram_app.start()
-
-    @app.on_event("shutdown")
-    async def shutdown() -> None:
+        yield
         await telegram_app.stop()
         await telegram_app.shutdown()
+
+    app = FastAPI(lifespan=lifespan)
 
     @app.post("/webhook")
     async def webhook(request: Request) -> Response:
