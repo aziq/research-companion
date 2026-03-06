@@ -63,9 +63,21 @@ def _format_for_telegram(analysis: str) -> str:
     return "\n".join(out).strip()
 
 
-async def _analyze_and_reply(update: Update, text: str, source: str = "") -> None:
+async def _analyze_and_reply(
+    update: Update,
+    text: str,
+    source_type: str = "note",
+    source: str = "",
+    user_note: str = "",
+) -> None:
     analysis = analyze(text)
-    save_item(source or text[:200], analysis)
+    save_item(
+        source_type=source_type,
+        source=source,
+        content=text,
+        analysis=analysis,
+        user_note=user_note,
+    )
     formatted = _format_for_telegram(analysis)
     await update.message.reply_text(formatted, parse_mode="HTML")
 
@@ -86,6 +98,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     ]
 
     if urls:
+        # Extract user context (message text minus the URLs themselves)
+        user_note = text
+        for url_str in urls:
+            user_note = user_note.replace(url_str, "")
+        user_note = " ".join(user_note.split()).strip()
+
         for url in urls:
             await message.reply_text(f"Fetching {url} ...")
             fetched = await fetch_url(url)
@@ -93,10 +111,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await message.reply_text(f"Could not extract content from {url}.")
                 continue
             await message.reply_text("Analyzing...")
-            await _analyze_and_reply(update, fetched["text"], source=url)
+            await _analyze_and_reply(
+                update, fetched["text"],
+                source_type="url", source=url, user_note=user_note,
+            )
     else:
         await message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, text, source="note")
+        await _analyze_and_reply(update, text, source_type="note")
 
 
 # --- Voice messages ---
@@ -114,7 +135,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         await update.message.reply_text(f"Transcript:\n{text[:300]}{'...' if len(text) > 300 else ''}")
         await update.message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, text, source="voice_memo")
+        await _analyze_and_reply(update, text, source_type="voice_memo")
     finally:
         Path(path).unlink(missing_ok=True)
 
@@ -135,7 +156,10 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text("Could not transcribe audio.")
             return
         await update.message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, text, source=audio.file_name or "audio")
+        await _analyze_and_reply(
+            update, text,
+            source_type="audio", source=audio.file_name or "",
+        )
     finally:
         Path(path).unlink(missing_ok=True)
 
@@ -155,7 +179,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text("No speech detected in video.")
             return
         await update.message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, text, source="video")
+        await _analyze_and_reply(update, text, source_type="video")
     finally:
         Path(path).unlink(missing_ok=True)
 
@@ -176,7 +200,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         caption = update.message.caption or ""
         text = analyze_image(b64, caption)
         await update.message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, text, source="photo")
+        await _analyze_and_reply(
+            update, text,
+            source_type="photo", user_note=caption,
+        )
     finally:
         Path(path).unlink(missing_ok=True)
 
@@ -217,6 +244,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         await update.message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, text, source=name)
+        await _analyze_and_reply(
+            update, text,
+            source_type="document", source=name,
+            user_note=update.message.caption or "",
+        )
     finally:
         Path(path).unlink(missing_ok=True)
