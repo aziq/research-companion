@@ -78,6 +78,30 @@ uvicorn main:app --host 0.0.0.0 --port 8080
 
 The mode is selected automatically -- if `WEBHOOK_URL` is set, it builds a FastAPI app with a `/webhook` endpoint and `/health` check. Otherwise it runs in long-polling mode.
 
+### Bot Commands
+
+Once the bot is running, use these commands inside the Telegram chat:
+
+| Command | Description |
+|---|---|
+| `/list` | Browse the 20 most recent knowledge base entries |
+| `/show <id>` | Show full analysis and metadata for an entry |
+| `/search <query>` | Search across source, content, and analysis |
+| `/delete <id>` | Remove an entry from the knowledge base |
+
+**Register commands with BotFather** (optional, enables autocomplete in Telegram):
+
+1. Message [@BotFather](https://t.me/BotFather) → `/setcommands`
+2. Select your bot
+3. Paste:
+
+```
+list - Browse recent knowledge base entries
+show - /show <id>  Show full entry
+search - /search <query>  Search the knowledge base
+delete - /delete <id>  Remove an entry
+```
+
 ### Knowledge Base CLI
 
 ```bash
