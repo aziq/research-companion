@@ -5,6 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.db import get_all_items, get_item, search_items, delete_item
+from bot.formatting import format_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ async def cmd_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if note:
         header += f"\n<i>Note: {note}</i>"
 
-    analysis = html.escape(row["analysis"] or "(no analysis)")
+    analysis = format_analysis(row["analysis"]) if row["analysis"] else "(no analysis)"
 
     msg = f"{header}\n\n{analysis}"
 

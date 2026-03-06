@@ -1,6 +1,4 @@
-import html
 import logging
-import re
 import tempfile
 from pathlib import Path
 
@@ -10,57 +8,10 @@ from telegram.ext import ContextTypes
 from bot.analyzer import analyze, analyze_image
 from bot.db import save_item
 from bot.fetcher import fetch_url
+from bot.formatting import format_analysis
 from bot.transcriber import transcribe
 
 logger = logging.getLogger(__name__)
-
-_SECTION_EMOJIS = {
-    "main idea": "💡",
-    "why it matters": "🎯",
-    "category": "🏷",
-    "suggested experiment": "🧪",
-    "time required to explore": "⏱",
-}
-
-
-def _format_for_telegram(analysis: str) -> str:
-    """Convert markdown analysis text to Telegram HTML."""
-    lines = analysis.split("\n")
-    out: list[str] = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            out.append("")
-            continue
-
-        # Markdown headers: # / ## / ###
-        header_match = re.match(r"^#{1,3}\s+(.*)", stripped)
-        if header_match:
-            raw = header_match.group(1).strip()
-            lookup = re.sub(r"\*\*", "", raw).rstrip(":").strip().lower()
-            emoji = _SECTION_EMOJIS.get(lookup, "")
-            clean = re.sub(r"\*\*(.+?)\*\*", r"\1", raw)
-            content = html.escape(clean)
-            prefix = f"{emoji} " if emoji else ""
-            out.append(f"\n{prefix}<b>{content}</b>")
-            continue
-
-        # Section headers ending with ":" (fallback)
-        if stripped.endswith(":") and len(stripped) < 60:
-            lookup = stripped.rstrip(":").strip().lower()
-            emoji = _SECTION_EMOJIS.get(lookup, "")
-            label = html.escape(stripped)
-            prefix = f"{emoji} " if emoji else ""
-            out.append(f"\n{prefix}<b>{label}</b>")
-            continue
-
-        # Regular line: escape HTML, then convert markdown bold
-        escaped = html.escape(stripped)
-        escaped = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escaped)
-        # Markdown bullets to •
-        escaped = re.sub(r"^[\-\*]\s", "• ", escaped)
-        out.append(escaped)
-    return "\n".join(out).strip()
 
 
 async def _analyze_and_reply(
@@ -78,7 +29,7 @@ async def _analyze_and_reply(
         analysis=analysis,
         user_note=user_note,
     )
-    formatted = _format_for_telegram(analysis)
+    formatted = format_analysis(analysis)
     await update.message.reply_text(formatted, parse_mode="HTML")
 
 
