@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,8 +21,10 @@ else:
     client = OpenAI(api_key=_OPENAI_KEY)
     _MODEL = "gpt-4o-mini"
 
-_PROMPT = """You are my personal AI research analyst.
+_PROFILE_PATH = Path(__file__).parent.parent / "PROFILE.md"
 
+_PROMPT = """You are my personal AI research analyst.
+{profile_block}
 Analyze the following content and return:
 
 Main idea:
@@ -34,8 +37,16 @@ CONTENT:
 {text}"""
 
 
+def _load_profile() -> str:
+    if _PROFILE_PATH.exists():
+        return _PROFILE_PATH.read_text(encoding="utf-8").strip()
+    return ""
+
+
 def analyze(text: str) -> str:
-    prompt = _PROMPT.format(text=text)
+    profile = _load_profile()
+    profile_block = f"\nAbout the person you are analysing for:\n{profile}\n" if profile else ""
+    prompt = _PROMPT.format(profile_block=profile_block, text=text)
     if _PROVIDER == "anthropic":
         resp = client.messages.create(
             model=_MODEL,

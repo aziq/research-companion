@@ -1,11 +1,14 @@
 import html
 import logging
+from pathlib import Path
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.db import get_all_items, get_item, search_items, delete_item
 from bot.formatting import format_analysis
+
+_PROFILE_PATH = Path(__file__).parent.parent / "PROFILE.md"
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +103,29 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         lines.append(f"{icon} <code>#{r['id']}</code> <i>{date}</i>  {source}{snippet}")
 
     await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
+async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/profile [text] — show or update your personal profile."""
+    if context.args:
+        text = " ".join(context.args)
+        _PROFILE_PATH.write_text(text, encoding="utf-8")
+        await update.message.reply_text("Profile updated.")
+        return
+
+    if not _PROFILE_PATH.exists():
+        await update.message.reply_text(
+            "No profile set yet. Use /profile <text> to set one, "
+            "or edit PROFILE.md directly for multi-line content."
+        )
+        return
+
+    content = _PROFILE_PATH.read_text(encoding="utf-8").strip()
+    if not content:
+        await update.message.reply_text("Profile file exists but is empty.")
+        return
+
+    await update.message.reply_text(f"<b>Your profile:</b>\n\n{html.escape(content)}", parse_mode="HTML")
 
 
 async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
