@@ -45,6 +45,13 @@ pip install -r requirements.txt
 
 ### Configuration
 
+Optionally set up a personal profile (see [Personalisation](#personalisation)):
+
+```bash
+cp PROFILE.md.example PROFILE.md
+# then edit PROFILE.md
+```
+
 Create a `.env` file:
 
 ```bash
@@ -88,6 +95,8 @@ Once the bot is running, use these commands inside the Telegram chat:
 | `/show <id>` | Show full analysis and metadata for an entry |
 | `/search <query>` | Search across source, content, and analysis |
 | `/delete <id>` | Remove an entry from the knowledge base |
+| `/profile` | Show your current profile |
+| `/profile <text>` | Update your profile with a one-liner |
 
 **Register commands with BotFather** (optional, enables autocomplete in Telegram):
 
@@ -100,6 +109,7 @@ list - Browse recent knowledge base entries
 show - /show <id>  Show full entry
 search - /search <query>  Search the knowledge base
 delete - /delete <id>  Remove an entry
+profile - Show or update your personal profile
 ```
 
 ### Knowledge Base CLI
@@ -121,6 +131,24 @@ Example list output:
    8  📄 document   2026-03-06T12:45   - NA -               report.pdf
 ```
 
+## Personalisation
+
+All analysis is tailored to you via `PROFILE.md` in the project root (gitignored — stays private). The bot reads it on every request, so edits take effect immediately without restarting. A starter template is provided as `PROFILE.md.example`.
+
+**Quick update from Telegram:**
+```
+/profile I'm a software engineer focused on AI and crypto. Suggest Python experiments under a day.
+```
+
+**Multi-line profile** — edit `PROFILE.md` directly in any text editor. Markdown comments (`<!-- … -->`) are stripped by the bot so you can annotate freely.
+
+**Check current profile:**
+```
+/profile
+```
+
+If `PROFILE.md` is absent or empty the bot falls back to a generic prompt, so personalisation is entirely optional.
+
 ## Project Structure
 
 ```
@@ -129,6 +157,7 @@ research-companion/
 ├── kb.py                # CLI knowledge base browser
 ├── requirements.txt     # Python dependencies
 ├── .env                 # Environment variables (not committed)
+├── PROFILE.md.example   # Profile template — copy to PROFILE.md and edit freely
 ├── research.db          # SQLite database (created at runtime, not committed)
 └── bot/
     ├── application.py   # Telegram app builder, registers handlers

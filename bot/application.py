@@ -1,6 +1,6 @@
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-from bot.commands import cmd_delete, cmd_list, cmd_search, cmd_show
+from bot.commands import cmd_delete, cmd_list, cmd_profile, cmd_search, cmd_show
 from bot.handlers import (
     handle_audio,
     handle_document,
@@ -19,6 +19,7 @@ def build_application(token: str) -> Application:
     app.add_handler(CommandHandler("show", cmd_show))
     app.add_handler(CommandHandler("search", cmd_search))
     app.add_handler(CommandHandler("delete", cmd_delete))
+    app.add_handler(CommandHandler("profile", cmd_profile))
 
     # Content ingestion
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
