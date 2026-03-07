@@ -21,7 +21,12 @@ async def _analyze_and_reply(
     source: str = "",
     user_note: str = "",
 ) -> None:
-    analysis = analyze(text)
+    try:
+        analysis = analyze(text)
+    except Exception as e:
+        logger.exception("Analysis failed")
+        await update.message.reply_text(f"Analysis failed: {e}\n\nThe content was not saved.")
+        return
     save_item(
         source_type=source_type,
         source=source,
@@ -149,7 +154,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         with open(path, "rb") as img:
             b64 = base64.b64encode(img.read()).decode()
         caption = update.message.caption or ""
-        text = analyze_image(b64, caption)
+        try:
+            text = analyze_image(b64, caption)
+        except Exception as e:
+            logger.exception("Image analysis failed")
+            await update.message.reply_text(f"Image analysis failed: {e}")
+            return
         await update.message.reply_text("Analyzing...")
         await _analyze_and_reply(
             update, text,
