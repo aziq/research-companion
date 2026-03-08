@@ -25,7 +25,7 @@ _PROFILE_PATH = Path(__file__).parent.parent / "PROFILE.md"
 
 _PROMPT = """You are my personal AI research analyst.
 {profile_block}
-Analyze the following content and return:
+Analyze the following content and return exactly these five fields, then stop. Do not ask follow-up questions or offer further assistance.
 
 Main idea:
 Why it matters:
