@@ -1,7 +1,10 @@
+import base64
 import logging
 import tempfile
 from pathlib import Path
+import pdfplumber
 
+import httpx
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -12,6 +15,25 @@ from bot.formatting import format_analysis
 from bot.transcriber import transcribe
 
 logger = logging.getLogger(__name__)
+
+
+async def _describe_images(image_urls: list[str]) -> str:
+    """Download each image URL and return a combined description string."""
+    descriptions = []
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        for url in image_urls:
+            try:
+                resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+                resp.raise_for_status()
+                b64 = base64.b64encode(resp.content).decode()
+                desc = analyze_image(b64)
+                descriptions.append(desc)
+            except Exception:
+                logger.exception(f"Failed to analyse image {url}")
+    if not descriptions:
+        return ""
+    joined = "\n\n".join(f"[Image {i+1}]: {d}" for i, d in enumerate(descriptions))
+    return f"\n\nIMAGE DESCRIPTIONS:\n{joined}"
 
 
 async def _analyze_and_reply(
@@ -67,8 +89,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await message.reply_text(f"Could not extract content from {url}.")
                 continue
             await message.reply_text("Analyzing...")
+            text = fetched["text"]
+            image_urls = fetched.get("image_urls") or []
+            if image_urls:
+                text += await _describe_images(image_urls)
             await _analyze_and_reply(
-                update, fetched["text"],
+                update, text,
                 source_type="url", source=url, user_note=user_note,
             )
     else:
@@ -143,7 +169,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # --- Photos (GPT-4o-mini vision) ---
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    import base64
     await update.message.reply_text("Analyzing image...")
     photo = update.message.photo[-1]  # largest available size
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
@@ -185,7 +210,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await doc_file.download_to_drive(path)
 
         if "pdf" in mime:
-            import pdfplumber
             text = ""
             with pdfplumber.open(path) as pdf:
                 for page in pdf.pages:

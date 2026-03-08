@@ -73,24 +73,32 @@ def _format_fxtwitter(tweet: dict, url: str) -> dict:
     handle = tweet.get("author", {}).get("screen_name", "")
     author = tweet.get("author", {}).get("name", "")
 
+    image_urls = [
+        p["url"] for p in (tweet.get("media") or {}).get("photos", []) if p.get("url")
+    ]
+
     # X Article (long-form "Notes")
     article = tweet.get("article")
     if article:
         title = article.get("title", "")
         body = article.get("text") or tweet.get("text", "")
         text = f"X Article by @{handle}: {title}\n\n{body}"
-        return {"text": text[:8000], "title": title or f"Article by @{handle}", "source_type": "social"}
+        return {"text": text[:8000], "title": title or f"Article by @{handle}", "source_type": "social", "image_urls": image_urls}
 
     text = f"@{handle} ({author}):\n\n{tweet.get('text', '')}"
-    return {"text": text[:8000], "title": f"Post by @{handle}", "source_type": "social"}
+    return {"text": text[:8000], "title": f"Post by @{handle}", "source_type": "social", "image_urls": image_urls}
 
 
 def _format_syndication(data: dict, url: str) -> dict:
     user = data.get("user", {})
     handle = user.get("screen_name", "")
     author = user.get("name", "")
+    image_urls = [
+        m["media_url_https"] for m in (data.get("mediaDetails") or [])
+        if m.get("type") == "photo" and m.get("media_url_https")
+    ]
     text = f"@{handle} ({author}):\n\n{data.get('text', '')}"
-    return {"text": text[:8000], "title": f"Post by @{handle}", "source_type": "social"}
+    return {"text": text[:8000], "title": f"Post by @{handle}", "source_type": "social", "image_urls": image_urls}
 
 
 def _fetch_tweet(url: str) -> dict:
