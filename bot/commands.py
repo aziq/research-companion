@@ -107,14 +107,18 @@ async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/profile [text] — show or update your personal profile."""
+    message = update.effective_message
+    if not message:
+        return
+
     if context.args:
         text = " ".join(context.args)
         _PROFILE_PATH.write_text(text, encoding="utf-8")
-        await update.message.reply_text("Profile updated.")
+        await message.reply_text("Profile updated.")
         return
 
     if not _PROFILE_PATH.exists():
-        await update.message.reply_text(
+        await message.reply_text(
             "No profile set yet. Use /profile <text> to set one, "
             "or edit PROFILE.md directly for multi-line content."
         )
@@ -122,10 +126,10 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     content = _PROFILE_PATH.read_text(encoding="utf-8").strip()
     if not content:
-        await update.message.reply_text("Profile file exists but is empty.")
+        await message.reply_text("Profile file exists but is empty.")
         return
 
-    await update.message.reply_text(f"<b>Your profile:</b>\n\n{html.escape(content)}", parse_mode="HTML")
+    await message.reply_text(f"<b>Your profile:</b>\n\n{html.escape(content)}", parse_mode="HTML")
 
 
 async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
