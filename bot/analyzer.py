@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,8 +20,6 @@ else:
     client = OpenAI(api_key=_OPENAI_KEY)
     _MODEL = "gpt-4o-mini"
 
-_PROFILE_PATH = Path(__file__).parent.parent / "PROFILE.md"
-
 _PROMPT = """You are my personal AI research analyst.
 {profile_block}
 Analyze the following content and return exactly these five fields, then stop. Do not ask follow-up questions or offer further assistance.
@@ -37,14 +34,13 @@ CONTENT:
 {text}"""
 
 
-def _load_profile() -> str:
-    if _PROFILE_PATH.exists():
-        return _PROFILE_PATH.read_text(encoding="utf-8").strip()
-    return ""
+def _load_profile(user_id: str) -> str:
+    from bot.db import get_profile
+    return get_profile(user_id)
 
 
-def analyze(text: str) -> str:
-    profile = _load_profile()
+def analyze(text: str, user_id: str) -> str:
+    profile = _load_profile(user_id)
     profile_block = f"\nAbout the person you are analysing for:\n{profile}\n" if profile else ""
     prompt = _PROMPT.format(profile_block=profile_block, text=text)
     if _PROVIDER == "anthropic":

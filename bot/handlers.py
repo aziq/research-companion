@@ -38,18 +38,20 @@ async def _describe_images(image_urls: list[str]) -> str:
 
 async def _analyze_and_reply(
     update: Update,
+    user_id: str,
     text: str,
     source_type: str = "note",
     source: str = "",
     user_note: str = "",
 ) -> None:
     try:
-        analysis = analyze(text)
+        analysis = analyze(text, user_id)
     except Exception as e:
         logger.exception("Analysis failed")
         await update.message.reply_text(f"Analysis failed: {e}\n\nThe content was not saved.")
         return
     save_item(
+        user_id=user_id,
         source_type=source_type,
         source=source,
         content=text,
@@ -68,6 +70,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not text:
         return
 
+    user_id = str(update.effective_user.id)
     entities = message.entities or []
     urls = [
         text[e.offset: e.offset + e.length] if e.type == "url" else e.url
@@ -94,17 +97,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if image_urls:
                 text += await _describe_images(image_urls)
             await _analyze_and_reply(
-                update, text,
+                update, user_id, text,
                 source_type="url", source=url, user_note=user_note,
             )
     else:
         await message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, text, source_type="note")
+        await _analyze_and_reply(update, user_id, text, source_type="note")
 
 
 # --- Voice messages ---
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = str(update.effective_user.id)
     await update.message.reply_text("Transcribing voice message...")
     with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
         path = f.name
@@ -117,7 +121,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         await update.message.reply_text(f"Transcript:\n{text[:300]}{'...' if len(text) > 300 else ''}")
         await update.message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, text, source_type="voice_memo")
+        await _analyze_and_reply(update, user_id, text, source_type="voice_memo")
     finally:
         Path(path).unlink(missing_ok=True)
 
@@ -125,6 +129,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # --- Audio files ---
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = str(update.effective_user.id)
     audio = update.message.audio
     suffix = f".{audio.mime_type.split('/')[-1]}" if audio.mime_type else ".mp3"
     await update.message.reply_text(f"Transcribing audio: {audio.file_name or 'file'}...")
@@ -139,7 +144,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         await update.message.reply_text("Analyzing...")
         await _analyze_and_reply(
-            update, text,
+            update, user_id, text,
             source_type="audio", source=audio.file_name or "",
         )
     finally:
@@ -149,6 +154,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # --- Video & video notes ---
 
 async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = str(update.effective_user.id)
     video = update.message.video or update.message.video_note
     await update.message.reply_text("Extracting and transcribing video audio...")
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
@@ -161,14 +167,15 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text("No speech detected in video.")
             return
         await update.message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, text, source_type="video")
+        await _analyze_and_reply(update, user_id, text, source_type="video")
     finally:
         Path(path).unlink(missing_ok=True)
 
 
-# --- Photos (GPT-4o-mini vision) ---
+# --- Photos (vision) ---
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = str(update.effective_user.id)
     await update.message.reply_text("Analyzing image...")
     photo = update.message.photo[-1]  # largest available size
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
@@ -187,7 +194,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         await update.message.reply_text("Analyzing...")
         await _analyze_and_reply(
-            update, text,
+            update, user_id, text,
             source_type="photo", user_note=caption,
         )
     finally:
@@ -197,6 +204,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # --- Documents (PDF, text files, audio attachments) ---
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = str(update.effective_user.id)
     doc = update.message.document
     mime = doc.mime_type or ""
     name = doc.file_name or "document"
@@ -230,7 +238,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         await update.message.reply_text("Analyzing...")
         await _analyze_and_reply(
-            update, text,
+            update, user_id, text,
             source_type="document", source=name,
             user_note=update.message.caption or "",
         )

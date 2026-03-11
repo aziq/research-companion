@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Knowledge base CLI.
+Knowledge base CLI (admin view — sees all users).
 
 Usage:
-    python kb.py                    # list all items
-    python kb.py <id>               # show full item (analysis + original content)
-    python kb.py search <q>         # search across source, content, analysis
-    python kb.py delete <id>        # delete an item
+    python kb.py                        # list all items
+    python kb.py --user <id>            # list items for one user
+    python kb.py <id>                   # show full item (analysis + original content)
+    python kb.py search <q>             # search across source, content, analysis
+    python kb.py search <q> --user <id> # search within a single user's KB
+    python kb.py delete <id>            # delete an item (admin, ignores user scope)
 """
 
 import sys
@@ -21,31 +23,44 @@ _TYPE_ICONS = {
 }
 
 
-def cmd_list():
-    rows = get_all_items()
+def _parse_user_flag(args: list[str]) -> tuple[str | None, list[str]]:
+    """Extract --user <id> from args, return (user_id, remaining_args)."""
+    if "--user" in args:
+        idx = args.index("--user")
+        if idx + 1 < len(args):
+            user_id = args[idx + 1]
+            remaining = args[:idx] + args[idx + 2:]
+            return user_id, remaining
+    return None, args
+
+
+def cmd_list(user_id: str | None = None):
+    rows = get_all_items(user_id)
     if not rows:
         print("No items in knowledge base yet.")
         return
-    print(f"\n{'ID':>4}  {'TYPE':<12}  {'DATE':<16}  {'NOTE':<20}  SOURCE")
+    label = f"(user {user_id})" if user_id else "(all users)"
+    print(f"\n{'ID':>4}  {'USER':<12}  {'TYPE':<12}  {'DATE':<16}  {'NOTE':<20}  SOURCE")
     print("-" * WIDTH)
     for r in rows:
         icon = _TYPE_ICONS.get(r["source_type"], "")
         stype = f"{icon} {r['source_type']}"
+        uid = (r["user_id"] or "—")[:12]
         date = (r["created_at"] or "")[:16]
         note = (r["user_note"] or " - NA - ")[:20]
-        source = (r["source"] or "")[:WIDTH - 56] or "-"
-        print(f"{r['id']:>4}  {stype:<12} {date:<16}  {note:<20}  {source}")
-    print(f"\n{len(rows)} item(s). Run `python kb.py <id>` to read one.")
+        source = (r["source"] or "")[:WIDTH - 68] or "-"
+        print(f"{r['id']:>4}  {uid:<12}  {stype:<12} {date:<16}  {note:<20}  {source}")
+    print(f"\n{len(rows)} item(s) {label}. Run `python kb.py <id>` to read one.")
 
 
 def cmd_show(item_id: int):
-    row = get_item(item_id)
+    row = get_item(item_id)  # admin: no user scope
     if not row:
         print(f"No item with id {item_id}.")
         return
     icon = _TYPE_ICONS.get(row["source_type"], "")
     print(f"\n{'─' * WIDTH}")
-    print(f"  #{row['id']}  {icon} {row['source_type']}  {row['source'] or ''}")
+    print(f"  #{row['id']}  {icon} {row['source_type']}  {row['source'] or ''}  [user: {row['user_id'] or '—'}]")
     print(f"  {row['created_at']}")
     if row["user_note"]:
         print(f"  Context: {row['user_note']}")
@@ -63,17 +78,18 @@ def cmd_show(item_id: int):
     print()
 
 
-def cmd_search(query: str):
-    rows = search_items(query)
+def cmd_search(query: str, user_id: str | None = None):
+    rows = search_items(query, user_id)
     if not rows:
         print(f"No results for '{query}'.")
         return
-    print(f"\n{len(rows)} match(es) for '{query}':\n")
+    label = f" (user {user_id})" if user_id else ""
+    print(f"\n{len(rows)} match(es) for '{query}'{label}:\n")
     for r in rows:
         icon = _TYPE_ICONS.get(r["source_type"], "")
         date = (r["created_at"] or "")[:16]
-        print(f"  #{r['id']:>4}  {icon} {r['source_type']:<10}  {date}  {(r['source'] or '')[:WIDTH - 40]}")
-        # Show snippet from whichever field matched
+        uid = r["user_id"] or "—"
+        print(f"  #{r['id']:>4}  {icon} {r['source_type']:<10}  {date}  user:{uid}  {(r['source'] or '')[:WIDTH - 50]}")
         for field in ("source", "content", "analysis", "user_note"):
             text = r[field] or ""
             idx = text.lower().find(query.lower())
@@ -86,19 +102,20 @@ def cmd_search(query: str):
 
 
 def cmd_delete(item_id: int):
-    delete_item(item_id)
+    delete_item(item_id)  # admin: no user scope
     print(f"Deleted item #{item_id}.")
 
 
 def main():
     args = sys.argv[1:]
+    user_id, args = _parse_user_flag(args)
 
     if not args:
-        cmd_list()
+        cmd_list(user_id)
     elif len(args) == 1 and args[0].isdigit():
         cmd_show(int(args[0]))
     elif len(args) == 2 and args[0] == "search":
-        cmd_search(args[1])
+        cmd_search(args[1], user_id)
     elif len(args) == 2 and args[0] == "delete" and args[1].isdigit():
         cmd_delete(int(args[1]))
     else:
