@@ -214,7 +214,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
         path = f.name
     try:
-        doc_file = await doc.get_file()
+        try:
+            doc_file = await doc.get_file()
+        except Exception as e:
+            await update.message.reply_text(f"Could not retrieve file: {e}")
+            Path(path).unlink(missing_ok=True)
+            return
         await doc_file.download_to_drive(path)
 
         if "pdf" in mime:
