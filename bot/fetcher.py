@@ -13,7 +13,7 @@ _YT_PATTERNS = re.compile(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})")
 
 
 def _youtube_transcript(url: str) -> dict:
-    from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+    from youtube_transcript_api import YouTubeTranscriptApi
 
     match = _YT_PATTERNS.search(url)
     if not match:
@@ -21,10 +21,11 @@ def _youtube_transcript(url: str) -> dict:
 
     video_id = match.group(1)
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
-        text = " ".join(t["text"] for t in transcript)
+        api = YouTubeTranscriptApi()
+        fetched = api.fetch(video_id)
+        text = " ".join(snippet.text for snippet in fetched)
         return {"text": text[:8000], "title": f"YouTube video ({video_id})", "source_type": "youtube"}
-    except (NoTranscriptFound, TranscriptsDisabled):
+    except Exception:
         logger.info(f"No transcript for {video_id}, falling back to yt-dlp description")
         return _yt_dlp_extract(url)
 
@@ -145,25 +146,67 @@ def _yt_dlp_extract(url: str) -> dict:
 async def _generic_fetch(url: str) -> dict:
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            resp = await client.get(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
+            )
             html = resp.text
-        text = trafilatura.extract(html, include_comments=False, include_tables=False)
-        if not text:
-            text = ""
-        return {"text": text[:8000], "title": url, "source_type": "article"}
     except Exception as e:
         logger.warning(f"Generic fetch failed for {url}: {e}")
         return {"text": "", "title": url, "source_type": "unknown"}
+
+    logger.debug(f"Fetched {url} — status={resp.status_code} len={len(html)}")
+
+    # 1. trafilatura strict
+    text = trafilatura.extract(html, include_comments=False, include_tables=False)
+
+    # 2. trafilatura with recall mode (less strict)
+    if not text:
+        text = trafilatura.extract(html, include_comments=False, include_tables=True, favor_recall=True)
+        if text:
+            logger.debug(f"trafilatura favor_recall extracted {len(text)} chars from {url}")
+
+    if not text:
+        logger.debug(f"trafilatura failed for {url}, trying BeautifulSoup")
+
+    # 3. BeautifulSoup fallback — extract visible text from article/main/body
+    if not text:
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, "html.parser")
+            for tag in soup(["script", "style", "nav", "footer", "header"]):
+                tag.decompose()
+            container = soup.find("article") or soup.find("main") or soup.find("body")
+            if container:
+                text = container.get_text(separator="\n", strip=True)
+        except Exception as e:
+            logger.warning(f"BeautifulSoup fallback failed for {url}: {e}")
+
+    title = url
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        if soup.title and soup.title.string:
+            title = soup.title.string.strip()
+    except Exception:
+        pass
+
+    return {"text": (text or "")[:8000], "title": title, "source_type": "article"}
+
+
+def _domain_matches(domain: str, *targets: str) -> bool:
+    """Check if domain equals or is a subdomain of any target."""
+    return any(domain == t or domain.endswith(f".{t}") for t in targets)
 
 
 async def fetch_url(url: str) -> dict:
     domain = urlparse(url).netloc.lower()
 
-    if any(d in domain for d in ("youtube.com", "youtu.be")):
+    if _domain_matches(domain, "youtube.com", "youtu.be"):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _youtube_transcript, url)
 
-    if any(d in domain for d in ("twitter.com", "x.com", "t.co")):
+    if _domain_matches(domain, "twitter.com", "x.com", "t.co"):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _fetch_tweet, url)
 
