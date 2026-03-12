@@ -9,6 +9,7 @@ Usage:
     python kb.py search <q>             # search across source, content, analysis
     python kb.py search <q> --user <id> # search within a single user's KB
     python kb.py delete <id>            # delete an item (admin, ignores user scope)
+    python kb.py adduser <email>        # create a web-only user and print their API token
 """
 
 import sys
@@ -106,6 +107,22 @@ def cmd_delete(item_id: int):
     print(f"Deleted item #{item_id}.")
 
 
+def cmd_adduser(email: str):
+    """Create a new web-only user and print their API token."""
+    from bot.auth import generate_token
+    from bot.db import create_web_user
+    token = generate_token()
+    try:
+        user_id = create_web_user(email=email, api_token=token)
+    except ValueError as e:
+        print(f"Error: {e}")
+        return
+    print(f"Created user : {user_id}")
+    print(f"Email        : {email}")
+    print(f"API token    : {token}")
+    print("\nShare the token with the user — they enter it in the web UI login screen.")
+
+
 def main():
     args = sys.argv[1:]
     user_id, args = _parse_user_flag(args)
@@ -118,6 +135,8 @@ def main():
         cmd_search(args[1], user_id)
     elif len(args) == 2 and args[0] == "delete" and args[1].isdigit():
         cmd_delete(int(args[1]))
+    elif len(args) == 2 and args[0] == "adduser":
+        cmd_adduser(args[1])
     else:
         print(__doc__)
 

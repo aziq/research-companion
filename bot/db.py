@@ -17,8 +17,10 @@ CREATE TABLE IF NOT EXISTS items (
 
 _CREATE_PROFILES_SQL = """\
 CREATE TABLE IF NOT EXISTS profiles (
-    user_id  TEXT PRIMARY KEY,
-    content  TEXT NOT NULL DEFAULT ''
+    user_id   TEXT PRIMARY KEY,
+    content   TEXT NOT NULL DEFAULT '',
+    email     TEXT UNIQUE,
+    api_token TEXT UNIQUE
 )"""
 
 
@@ -63,6 +65,16 @@ def _init():
             conn.execute("ALTER TABLE items ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
 
         conn.execute(_CREATE_PROFILES_SQL)
+
+        # Migrate profiles table: add email + api_token if missing
+        profile_info = conn.execute("PRAGMA table_info(profiles)").fetchall()
+        profile_cols = {row["name"] for row in profile_info}
+        if "email" not in profile_cols:
+            conn.execute("ALTER TABLE profiles ADD COLUMN email TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_email ON profiles(email)")
+        if "api_token" not in profile_cols:
+            conn.execute("ALTER TABLE profiles ADD COLUMN api_token TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_api_token ON profiles(api_token)")
 
 
 _init()
@@ -156,3 +168,60 @@ def set_profile(user_id: str, content: str) -> None:
             "ON CONFLICT(user_id) DO UPDATE SET content = excluded.content",
             (user_id, content),
         )
+
+
+def set_profile_field(user_id: str, **fields) -> None:
+    """Upsert arbitrary profile columns (e.g. email, api_token)."""
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = excluded.{k}" for k in fields)
+    col_names = ", ".join(fields.keys())
+    placeholders = ", ".join("?" for _ in fields)
+    values = list(fields.values())
+    with _get_conn() as conn:
+        conn.execute(
+            f"INSERT INTO profiles (user_id, {col_names}) VALUES (?, {placeholders}) "
+            f"ON CONFLICT(user_id) DO UPDATE SET {set_clause}",
+            [user_id] + values,
+        )
+
+
+def get_profile_row(user_id: str) -> sqlite3.Row | None:
+    with _get_conn() as conn:
+        return conn.execute(
+            "SELECT user_id, content, email, api_token FROM profiles WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+
+
+def get_profile_by_token(token: str) -> sqlite3.Row | None:
+    with _get_conn() as conn:
+        return conn.execute(
+            "SELECT user_id, content, email, api_token FROM profiles WHERE api_token = ?",
+            (token,),
+        ).fetchone()
+
+
+def get_profile_by_email(email: str) -> sqlite3.Row | None:
+    with _get_conn() as conn:
+        return conn.execute(
+            "SELECT user_id, content, email, api_token FROM profiles WHERE email = ?",
+            (email.lower().strip(),),
+        ).fetchone()
+
+
+def create_web_user(email: str, api_token: str) -> str:
+    """Create a web-only user. Returns user_id. Raises ValueError if email exists."""
+    email = email.lower().strip()
+    user_id = f"web:{email}"
+    with _get_conn() as conn:
+        existing = conn.execute(
+            "SELECT user_id FROM profiles WHERE email = ?", (email,)
+        ).fetchone()
+        if existing:
+            raise ValueError(f"Email {email} is already registered (user_id={existing['user_id']})")
+        conn.execute(
+            "INSERT INTO profiles (user_id, email, api_token) VALUES (?, ?, ?)",
+            (user_id, email, api_token),
+        )
+    return user_id

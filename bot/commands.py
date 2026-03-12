@@ -4,7 +4,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.db import get_all_items, get_item, search_items, delete_item, get_profile, set_profile
+from bot.db import get_all_items, get_item, search_items, delete_item, get_profile, set_profile, set_profile_field
 from bot.formatting import format_analysis
 
 logger = logging.getLogger(__name__)
@@ -142,6 +142,20 @@ async def cmd_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     await message.reply_text(f"<b>Your profile:</b>\n\n{html.escape(content)}", parse_mode="HTML")
+
+
+async def cmd_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/token — (re)generate your web UI API token."""
+    user_id = str(update.effective_user.id)
+    from bot.auth import generate_token
+    token = generate_token()
+    set_profile_field(user_id, api_token=token)
+    await update.message.reply_text(
+        "Your API token (keep this secret — generating a new one invalidates the old one):\n\n"
+        f"<code>{token}</code>\n\n"
+        "Use this as a Bearer token in the web UI.",
+        parse_mode="HTML",
+    )
 
 
 async def cmd_delete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
