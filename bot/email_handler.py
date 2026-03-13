@@ -20,6 +20,7 @@ import os
 from fastapi import Request
 
 from bot.analyzer import analyze
+from bot.config import MAX_CONTENT_CHARS
 from bot.db import get_profile_by_email, save_item
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ async def handle_inbound_email(request: Request) -> dict:
     if subject:
         body = f"Subject: {subject}\n\n{body}"
 
-    body = body[:8000]
+    body = body[:MAX_CONTENT_CHARS]
 
     try:
         analysis = analyze(body, user_id)

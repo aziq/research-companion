@@ -7,6 +7,8 @@ import httpx
 import requests
 import trafilatura
 
+from bot.config import MAX_CONTENT_CHARS
+
 logger = logging.getLogger(__name__)
 
 _YT_PATTERNS = re.compile(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})")
@@ -24,7 +26,7 @@ def _youtube_transcript(url: str) -> dict:
         api = YouTubeTranscriptApi()
         fetched = api.fetch(video_id)
         text = " ".join(snippet.text for snippet in fetched)
-        return {"text": text[:8000], "title": f"YouTube video ({video_id})", "source_type": "youtube"}
+        return {"text": text[:MAX_CONTENT_CHARS], "title": f"YouTube video ({video_id})", "source_type": "youtube"}
     except Exception:
         logger.info(f"No transcript for {video_id}, falling back to yt-dlp description")
         return _yt_dlp_extract(url)
@@ -84,10 +86,10 @@ def _format_fxtwitter(tweet: dict, url: str) -> dict:
         title = article.get("title", "")
         body = article.get("text") or tweet.get("text", "")
         text = f"X Article by @{handle}: {title}\n\n{body}"
-        return {"text": text[:8000], "title": title or f"Article by @{handle}", "source_type": "social", "image_urls": image_urls}
+        return {"text": text[:MAX_CONTENT_CHARS], "title": title or f"Article by @{handle}", "source_type": "social", "image_urls": image_urls}
 
     text = f"@{handle} ({author}):\n\n{tweet.get('text', '')}"
-    return {"text": text[:8000], "title": f"Post by @{handle}", "source_type": "social", "image_urls": image_urls}
+    return {"text": text[:MAX_CONTENT_CHARS], "title": f"Post by @{handle}", "source_type": "social", "image_urls": image_urls}
 
 
 def _format_syndication(data: dict, url: str) -> dict:
@@ -99,7 +101,7 @@ def _format_syndication(data: dict, url: str) -> dict:
         if m.get("type") == "photo" and m.get("media_url_https")
     ]
     text = f"@{handle} ({author}):\n\n{data.get('text', '')}"
-    return {"text": text[:8000], "title": f"Post by @{handle}", "source_type": "social", "image_urls": image_urls}
+    return {"text": text[:MAX_CONTENT_CHARS], "title": f"Post by @{handle}", "source_type": "social", "image_urls": image_urls}
 
 
 def _fetch_tweet(url: str) -> dict:
@@ -180,7 +182,7 @@ def _yt_dlp_extract(url: str) -> dict:
             text = f"{title}\nBy: {uploader}\n\n{description}".strip()
 
         source_type = "youtube" if "vimeo" not in url and "youtube" in url else "video"
-        return {"text": text[:8000], "title": title, "source_type": source_type}
+        return {"text": text[:MAX_CONTENT_CHARS], "title": title, "source_type": source_type}
     except Exception as e:
         logger.warning(f"yt-dlp failed for {url}: {e}")
         return {"text": "", "title": url, "source_type": "unknown"}
@@ -218,7 +220,7 @@ def _yt_dlp_transcribe(url: str) -> dict:
         uploader = info.get("uploader") or info.get("channel") or ""
         title = info.get("title") or url
         text = f"{title}\nBy: {uploader}\n\nTranscript:\n{transcript}".strip()
-        return {"text": text[:8000], "title": title, "source_type": "video"}
+        return {"text": text[:MAX_CONTENT_CHARS], "title": title, "source_type": "video"}
     except Exception as e:
         logger.warning(f"yt-dlp transcribe failed for {url}: {e}")
         return {"text": "", "title": url, "source_type": "unknown"}
@@ -272,7 +274,7 @@ async def _generic_fetch(url: str) -> dict:
     except Exception:
         pass
 
-    return {"text": (text or "")[:8000], "title": title, "source_type": "article"}
+    return {"text": (text or "")[:MAX_CONTENT_CHARS], "title": title, "source_type": "article"}
 
 
 def _domain_matches(domain: str, *targets: str) -> bool:

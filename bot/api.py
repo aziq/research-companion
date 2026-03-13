@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from bot.analyzer import analyze, analyze_image
 from bot.auth import require_token
+from bot.config import MAX_CONTENT_CHARS
 from bot.db import (
     delete_item,
     get_all_items,
@@ -93,10 +94,10 @@ async def submit_file(
 
     if "pdf" in mime:
         with pdfplumber.open(io.BytesIO(data)) as pdf:
-            text = "".join(p.extract_text() or "" for p in pdf.pages)[:8000]
+            text = "".join(p.extract_text() or "" for p in pdf.pages)[:MAX_CONTENT_CHARS]
         source_type = "document"
     elif mime.startswith("text/"):
-        text = data.decode("utf-8", errors="ignore")[:8000]
+        text = data.decode("utf-8", errors="ignore")[:MAX_CONTENT_CHARS]
         source_type = "document"
     elif mime.startswith("image/"):
         b64 = base64.b64encode(data).decode()

@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.analyzer import analyze, analyze_image
+from bot.config import MAX_CONTENT_CHARS
 from bot.db import save_item
 from bot.fetcher import fetch_url
 from bot.formatting import format_analysis
@@ -227,10 +228,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             with pdfplumber.open(path) as pdf:
                 for page in pdf.pages:
                     text += page.extract_text() or ""
-            text = text[:8000]
+            text = text[:MAX_CONTENT_CHARS]
         elif mime.startswith("text/"):
             with open(path, "r", errors="ignore") as fh:
-                text = fh.read(8000)
+                text = fh.read(MAX_CONTENT_CHARS)
         elif mime.startswith("audio/") or suffix in (".ogg", ".mp3", ".m4a", ".wav", ".flac"):
             text = await transcribe(path)
         else:
