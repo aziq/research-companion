@@ -122,22 +122,52 @@ def _fetch_tweet(url: str) -> dict:
 
 def _yt_dlp_extract(url: str) -> dict:
     import yt_dlp
+    import tempfile, os
 
-    # ignore_no_formats_error: return info dict even when the tweet has no video
     ydl_opts = {
         "quiet": True,
         "skip_download": True,
         "ignore_no_formats_error": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["en", "en-US", "en-GB"],
+        "subtitlesformat": "vtt",
     }
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-        if not info:
-            raise ValueError("yt-dlp returned no info")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ydl_opts["paths"] = {"home": tmpdir}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+            if not info:
+                raise ValueError("yt-dlp returned no info")
+
+            # Try to read a downloaded subtitle file
+            subtitle_text = ""
+            for fname in os.listdir(tmpdir):
+                if fname.endswith(".vtt"):
+                    with open(os.path.join(tmpdir, fname), encoding="utf-8", errors="ignore") as f:
+                        raw = f.read()
+                    # Strip VTT header/timestamps, keep only text lines
+                    lines = []
+                    for line in raw.splitlines():
+                        line = line.strip()
+                        if not line or line.startswith("WEBVTT") or "-->" in line or line.isdigit():
+                            continue
+                        lines.append(line)
+                    subtitle_text = " ".join(lines)
+                    break
+
         uploader = info.get("uploader") or info.get("channel") or ""
+        title = info.get("title") or url
         description = info.get("description") or ""
-        text = f"Author: {uploader}\n\n{description}".strip()
-        return {"text": text[:8000], "title": info.get("title") or url, "source_type": "social"}
+
+        if subtitle_text:
+            text = f"{title}\nBy: {uploader}\n\nTranscript:\n{subtitle_text}"
+        else:
+            text = f"{title}\nBy: {uploader}\n\n{description}".strip()
+
+        source_type = "youtube" if "vimeo" not in url and "youtube" in url else "video"
+        return {"text": text[:8000], "title": title, "source_type": source_type}
     except Exception as e:
         logger.warning(f"yt-dlp failed for {url}: {e}")
         return {"text": "", "title": url, "source_type": "unknown"}
@@ -205,6 +235,10 @@ async def fetch_url(url: str) -> dict:
     if _domain_matches(domain, "youtube.com", "youtu.be"):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _youtube_transcript, url)
+
+    if _domain_matches(domain, "vimeo.com"):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _yt_dlp_extract, url)
 
     if _domain_matches(domain, "twitter.com", "x.com", "t.co"):
         loop = asyncio.get_running_loop()
