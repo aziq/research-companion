@@ -121,6 +121,11 @@ def _fetch_tweet(url: str) -> dict:
 
 
 def _yt_dlp_extract(url: str) -> dict:
+    """Extract metadata + subtitles from a video URL via yt-dlp.
+
+    Returns info dict with text/title/source_type; does NOT transcribe audio
+    (use _yt_dlp_transcribe for that).
+    """
     import yt_dlp
     import tempfile, os
 
@@ -130,8 +135,9 @@ def _yt_dlp_extract(url: str) -> dict:
         "ignore_no_formats_error": True,
         "writesubtitles": True,
         "writeautomaticsub": True,
-        "subtitleslangs": ["en", "en-US", "en-GB"],
+        "subtitleslangs": ["all"],   # grab whatever is available, filter after
         "subtitlesformat": "vtt",
+        "outtmpl": os.path.join("%(id)s", "%(id)s.%(ext)s"),
     }
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -141,20 +147,27 @@ def _yt_dlp_extract(url: str) -> dict:
             if not info:
                 raise ValueError("yt-dlp returned no info")
 
-            # Try to read a downloaded subtitle file
+            # Walk the whole tmpdir — yt-dlp may nest files under a subdirectory
             subtitle_text = ""
-            for fname in os.listdir(tmpdir):
-                if fname.endswith(".vtt"):
-                    with open(os.path.join(tmpdir, fname), encoding="utf-8", errors="ignore") as f:
+            for dirpath, _, filenames in os.walk(tmpdir):
+                for fname in filenames:
+                    if not fname.endswith(".vtt"):
+                        continue
+                    with open(os.path.join(dirpath, fname), encoding="utf-8", errors="ignore") as f:
                         raw = f.read()
-                    # Strip VTT header/timestamps, keep only text lines
-                    lines = []
+                    lines, seen = [], set()
                     for line in raw.splitlines():
                         line = line.strip()
                         if not line or line.startswith("WEBVTT") or "-->" in line or line.isdigit():
                             continue
-                        lines.append(line)
+                        if line not in seen:   # VTT often repeats lines across cue windows
+                            seen.add(line)
+                            lines.append(line)
                     subtitle_text = " ".join(lines)
+                    if subtitle_text:
+                        logger.debug(f"Subtitles from {fname}: {len(subtitle_text)} chars")
+                        break
+                if subtitle_text:
                     break
 
         uploader = info.get("uploader") or info.get("channel") or ""
@@ -170,6 +183,44 @@ def _yt_dlp_extract(url: str) -> dict:
         return {"text": text[:8000], "title": title, "source_type": source_type}
     except Exception as e:
         logger.warning(f"yt-dlp failed for {url}: {e}")
+        return {"text": "", "title": url, "source_type": "unknown"}
+
+
+def _yt_dlp_transcribe(url: str) -> dict:
+    """Download audio from a video URL via yt-dlp and transcribe with Whisper."""
+    import yt_dlp
+    import tempfile, os
+
+    ydl_opts = {
+        "quiet": True,
+        "format": "bestaudio/best",
+        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3"}],
+        "outtmpl": "audio.%(ext)s",
+    }
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ydl_opts["paths"] = {"home": tmpdir}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+            if not info:
+                raise ValueError("yt-dlp returned no info")
+
+            audio_file = next(
+                (os.path.join(tmpdir, f) for f in os.listdir(tmpdir) if f.endswith(".mp3")),
+                None,
+            )
+            if not audio_file:
+                raise ValueError("No audio file produced")
+
+            from bot.transcriber import _transcribe_sync
+            transcript = _transcribe_sync(audio_file)
+
+        uploader = info.get("uploader") or info.get("channel") or ""
+        title = info.get("title") or url
+        text = f"{title}\nBy: {uploader}\n\nTranscript:\n{transcript}".strip()
+        return {"text": text[:8000], "title": title, "source_type": "video"}
+    except Exception as e:
+        logger.warning(f"yt-dlp transcribe failed for {url}: {e}")
         return {"text": "", "title": url, "source_type": "unknown"}
 
 
@@ -238,7 +289,11 @@ async def fetch_url(url: str) -> dict:
 
     if _domain_matches(domain, "vimeo.com"):
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _yt_dlp_extract, url)
+        result = await loop.run_in_executor(None, _yt_dlp_extract, url)
+        if result["text"].strip():
+            return result
+        logger.info(f"No subtitles for {url}, falling back to Whisper transcription")
+        return await loop.run_in_executor(None, _yt_dlp_transcribe, url)
 
     if _domain_matches(domain, "twitter.com", "x.com", "t.co"):
         loop = asyncio.get_running_loop()
