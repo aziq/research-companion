@@ -19,13 +19,14 @@ help:
 	@echo "  PORT=8080 make dev    override the default port"
 	@echo ""
 
-$(VENV)/bin/activate: requirements.txt
+$(VENV)/.installed: requirements.txt
 	python3 -m venv $(VENV)
 	$(PIP) install --upgrade pip --quiet
 	$(PIP) install -r requirements.txt --quiet
-	@touch $(VENV)/bin/activate
+	$(VENV)/bin/playwright install chromium --with-deps
+	@touch $(VENV)/.installed
 
-install: $(VENV)/bin/activate
+install: $(VENV)/.installed
 
 dev: install
 	$(UVICORN) main:app --reload --host 0.0.0.0 --port $(PORT)

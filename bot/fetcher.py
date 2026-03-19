@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -226,6 +227,86 @@ def _yt_dlp_transcribe(url: str) -> dict:
         return {"text": "", "title": url, "source_type": "unknown"}
 
 
+async def _streamyard_fetch(url: str) -> dict:
+    """Render the StreamYard watch page, intercept the signed mp4, and transcribe with Whisper."""
+    import json as _json, tempfile, os, asyncio as _asyncio
+
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        logger.warning("playwright not installed — falling back to generic fetch for StreamYard")
+        return await _generic_fetch(url)
+
+    # Step 1: intercept the signed vod mp4 URL via headless browser
+    video_url = None
+    title = url
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+
+            got_video = _asyncio.Event()
+
+            async def on_request(request):
+                nonlocal video_url
+                if "vods-storage.streamyard.com" in request.url and ".mp4" in request.url:
+                    video_url = request.url
+                    got_video.set()
+
+            page.on("request", on_request)
+            await page.goto(url, wait_until="networkidle", timeout=30_000)
+
+            # Extract title from __NEXT_DATA__
+            next_data = await page.evaluate(
+                "() => { const el = document.getElementById('__NEXT_DATA__'); return el ? el.textContent : null; }"
+            )
+            if next_data:
+                try:
+                    data = _json.loads(next_data)
+                    title = data.get("props", {}).get("pageProps", {}).get("metadata", {}).get("title") or url
+                except Exception:
+                    pass
+
+            # Wait a bit for the video request to fire
+            try:
+                await _asyncio.wait_for(got_video.wait(), timeout=10)
+            except _asyncio.TimeoutError:
+                pass
+
+            await browser.close()
+    except Exception as e:
+        logger.warning(f"Playwright failed for {url}: {e}")
+        return {"text": "", "title": url, "source_type": "video"}
+
+    if not video_url:
+        logger.warning(f"StreamYard: no video URL intercepted for {url}")
+        return {"text": title, "title": title, "source_type": "video"}
+
+    logger.info(f"StreamYard: intercepted video URL, downloading and transcribing")
+
+    # Step 2: download the mp4 to a temp file and transcribe
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            tmp_path = f.name
+        async with httpx.AsyncClient(follow_redirects=True, timeout=300) as client:
+            async with client.stream("GET", video_url) as resp:
+                with open(tmp_path, "wb") as f:
+                    async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
+                        f.write(chunk)
+
+        from bot.transcriber import _transcribe_sync
+        loop = asyncio.get_running_loop()
+        transcript = await loop.run_in_executor(None, _transcribe_sync, tmp_path)
+        text = f"{title}\n\nTranscript:\n{transcript}".strip()
+        return {"text": text[:MAX_CONTENT_CHARS], "title": title, "source_type": "video"}
+    except Exception as e:
+        logger.warning(f"StreamYard transcription failed for {url}: {e}")
+        return {"text": title, "title": title, "source_type": "video"}
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
 async def _generic_fetch(url: str) -> dict:
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
@@ -288,6 +369,9 @@ async def fetch_url(url: str) -> dict:
     if _domain_matches(domain, "youtube.com", "youtu.be"):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _youtube_transcript, url)
+
+    if _domain_matches(domain, "streamyard.com"):
+        return await _streamyard_fetch(url)
 
     if _domain_matches(domain, "vimeo.com"):
         loop = asyncio.get_running_loop()
