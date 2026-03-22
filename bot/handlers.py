@@ -13,6 +13,7 @@ from bot.config import MAX_CONTENT_CHARS
 from bot.db import save_item
 from bot.fetcher import fetch_url
 from bot.formatting import format_analysis
+from bot.storage import save_file_from_path
 from bot.transcriber import transcribe
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ async def _analyze_and_reply(
     source_type: str = "note",
     source: str = "",
     user_note: str = "",
+    file_path: str = "",
 ) -> None:
     try:
         analysis = analyze(text, user_id)
@@ -58,6 +60,7 @@ async def _analyze_and_reply(
         content=text,
         analysis=analysis,
         user_note=user_note,
+        file_path=file_path,
     )
     formatted = format_analysis(analysis)
     await update.message.reply_text(formatted, parse_mode="HTML")
@@ -100,6 +103,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await _analyze_and_reply(
                 update, user_id, text,
                 source_type="url", source=url, user_note=user_note,
+                file_path=fetched.get("file_path", ""),
             )
     else:
         await message.reply_text("Analyzing...")
@@ -122,7 +126,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         await update.message.reply_text(f"Transcript:\n{text[:300]}{'...' if len(text) > 300 else ''}")
         await update.message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, user_id, text, source_type="voice_memo")
+        stored_path = save_file_from_path(path, ".ogg")
+        await _analyze_and_reply(update, user_id, text, source_type="voice_memo", file_path=stored_path)
     finally:
         Path(path).unlink(missing_ok=True)
 
@@ -144,9 +149,11 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text("Could not transcribe audio.")
             return
         await update.message.reply_text("Analyzing...")
+        stored_path = save_file_from_path(path, suffix)
         await _analyze_and_reply(
             update, user_id, text,
             source_type="audio", source=audio.file_name or "",
+            file_path=stored_path,
         )
     finally:
         Path(path).unlink(missing_ok=True)
@@ -168,7 +175,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text("No speech detected in video.")
             return
         await update.message.reply_text("Analyzing...")
-        await _analyze_and_reply(update, user_id, text, source_type="video")
+        stored_path = save_file_from_path(path, ".mp4")
+        await _analyze_and_reply(update, user_id, text, source_type="video", file_path=stored_path)
     finally:
         Path(path).unlink(missing_ok=True)
 
@@ -194,9 +202,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await update.message.reply_text(f"Image analysis failed: {e}")
             return
         await update.message.reply_text("Analyzing...")
+        stored_path = save_file_from_path(path, ".jpg")
         await _analyze_and_reply(
             update, user_id, text,
             source_type="photo", user_note=caption,
+            file_path=stored_path,
         )
     finally:
         Path(path).unlink(missing_ok=True)
@@ -243,10 +253,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
         await update.message.reply_text("Analyzing...")
+        stored_path = save_file_from_path(path, suffix)
         await _analyze_and_reply(
             update, user_id, text,
             source_type="document", source=name,
             user_note=update.message.caption or "",
+            file_path=stored_path,
         )
     finally:
         Path(path).unlink(missing_ok=True)

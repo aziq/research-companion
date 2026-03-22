@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pdfplumber
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse as FastAPIFileResponse
 
 from bot.analyzer import analyze, analyze_image
 from bot.auth import require_token
@@ -20,6 +21,7 @@ from bot.db import (
     set_profile,
 )
 from bot.fetcher import fetch_url
+from bot.storage import full_path, save_file
 from bot.transcriber import transcribe
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,17 @@ async def remove_item(item_id: int, user_id: str = Depends(require_token)):
     if not get_item(item_id, user_id):
         raise HTTPException(status_code=404, detail="Not found")
     delete_item(item_id, user_id)
+
+
+@router.get("/items/{item_id}/file")
+async def download_file(item_id: int, user_id: str = Depends(require_token)):
+    row = get_item(item_id, user_id)
+    if not row or not row["file_path"]:
+        raise HTTPException(status_code=404, detail="No file stored for this item")
+    p = full_path(row["file_path"])
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    return FastAPIFileResponse(str(p))
 
 
 # ---------------------------------------------------------------------------
@@ -92,18 +105,23 @@ async def submit_file(
     suffix = f".{name.rsplit('.', 1)[-1]}" if "." in name else ".bin"
     data = await file.read()
 
+    stored_file_path = ""
     if "pdf" in mime:
+        stored_file_path = save_file(data, suffix)
         with pdfplumber.open(io.BytesIO(data)) as pdf:
             text = "".join(p.extract_text() or "" for p in pdf.pages)[:MAX_CONTENT_CHARS]
         source_type = "document"
     elif mime.startswith("text/"):
+        stored_file_path = save_file(data, suffix)
         text = data.decode("utf-8", errors="ignore")[:MAX_CONTENT_CHARS]
         source_type = "document"
     elif mime.startswith("image/"):
+        stored_file_path = save_file(data, suffix)
         b64 = base64.b64encode(data).decode()
         text = analyze_image(b64, user_note)
         source_type = "photo"
     elif mime.startswith("audio/") or suffix in (".ogg", ".mp3", ".m4a", ".wav", ".flac"):
+        stored_file_path = save_file(data, suffix)
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
             f.write(data)
             tmp_path = f.name
@@ -119,7 +137,7 @@ async def submit_file(
         raise HTTPException(status_code=422, detail="Could not extract text from file")
 
     analysis = analyze(text, user_id)
-    save_item(user_id, source_type, name, text, analysis, user_note)
+    save_item(user_id, source_type, name, text, analysis, user_note, file_path=stored_file_path)
     return {"analysis": analysis}
 
 

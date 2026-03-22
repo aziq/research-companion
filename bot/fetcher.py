@@ -295,11 +295,14 @@ async def _streamyard_fetch(url: str) -> dict:
                     async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
                         f.write(chunk)
 
+        from bot.storage import save_file_from_path
+        stored_file_path = save_file_from_path(tmp_path, ".mp4")
+
         from bot.transcriber import _transcribe_sync
         loop = asyncio.get_running_loop()
         transcript = await loop.run_in_executor(None, _transcribe_sync, tmp_path)
         text = f"{title}\n\nTranscript:\n{transcript}".strip()
-        return {"text": text[:MAX_CONTENT_CHARS], "title": title, "source_type": "video"}
+        return {"text": text[:MAX_CONTENT_CHARS], "title": title, "source_type": "video", "file_path": stored_file_path}
     except Exception as e:
         logger.warning(f"StreamYard transcription failed for {url}: {e}")
         return {"text": title, "title": title, "source_type": "video"}

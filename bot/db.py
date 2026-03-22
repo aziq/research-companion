@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS items (
     content     TEXT NOT NULL DEFAULT '',
     analysis    TEXT NOT NULL DEFAULT '',
     user_note   TEXT NOT NULL DEFAULT '',
+    file_path   TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 )"""
 
@@ -64,6 +65,10 @@ def _init():
         if "user_id" not in cols:
             conn.execute("ALTER TABLE items ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
 
+        # Add file_path column if missing
+        if "file_path" not in cols:
+            conn.execute("ALTER TABLE items ADD COLUMN file_path TEXT NOT NULL DEFAULT ''")
+
         conn.execute(_CREATE_PROFILES_SQL)
 
         # Migrate profiles table: add email + api_token if missing
@@ -87,12 +92,14 @@ def save_item(
     content: str,
     analysis: str,
     user_note: str = "",
+    *,
+    file_path: str = "",
 ) -> None:
     with _get_conn() as conn:
         conn.execute(
-            "INSERT INTO items (user_id, source_type, source, content, analysis, user_note) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, source_type, source, content, analysis, user_note),
+            "INSERT INTO items (user_id, source_type, source, content, analysis, user_note, file_path) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (user_id, source_type, source, content, analysis, user_note, file_path),
         )
 
 
@@ -100,12 +107,12 @@ def get_all_items(user_id: str | None = None) -> list[sqlite3.Row]:
     with _get_conn() as conn:
         if user_id is not None:
             return conn.execute(
-                "SELECT id, user_id, source_type, source, content, analysis, user_note, created_at "
+                "SELECT id, user_id, source_type, source, content, analysis, user_note, file_path, created_at "
                 "FROM items WHERE user_id = ? ORDER BY id DESC",
                 (user_id,),
             ).fetchall()
         return conn.execute(
-            "SELECT id, user_id, source_type, source, content, analysis, user_note, created_at "
+            "SELECT id, user_id, source_type, source, content, analysis, user_note, file_path, created_at "
             "FROM items ORDER BY id DESC"
         ).fetchall()
 
@@ -114,12 +121,12 @@ def get_item(item_id: int, user_id: str | None = None) -> sqlite3.Row | None:
     with _get_conn() as conn:
         if user_id is not None:
             return conn.execute(
-                "SELECT id, user_id, source_type, source, content, analysis, user_note, created_at "
+                "SELECT id, user_id, source_type, source, content, analysis, user_note, file_path, created_at "
                 "FROM items WHERE id = ? AND user_id = ?",
                 (item_id, user_id),
             ).fetchone()
         return conn.execute(
-            "SELECT id, user_id, source_type, source, content, analysis, user_note, created_at "
+            "SELECT id, user_id, source_type, source, content, analysis, user_note, file_path, created_at "
             "FROM items WHERE id = ?",
             (item_id,),
         ).fetchone()
@@ -130,14 +137,14 @@ def search_items(query: str, user_id: str | None = None) -> list[sqlite3.Row]:
     with _get_conn() as conn:
         if user_id is not None:
             return conn.execute(
-                "SELECT id, user_id, source_type, source, content, analysis, user_note, created_at "
+                "SELECT id, user_id, source_type, source, content, analysis, user_note, file_path, created_at "
                 "FROM items "
                 "WHERE user_id = ? AND (source LIKE ? OR content LIKE ? OR analysis LIKE ? OR user_note LIKE ?) "
                 "ORDER BY id DESC",
                 (user_id, pattern, pattern, pattern, pattern),
             ).fetchall()
         return conn.execute(
-            "SELECT id, user_id, source_type, source, content, analysis, user_note, created_at "
+            "SELECT id, user_id, source_type, source, content, analysis, user_note, file_path, created_at "
             "FROM items "
             "WHERE source LIKE ? OR content LIKE ? OR analysis LIKE ? OR user_note LIKE ? "
             "ORDER BY id DESC",
