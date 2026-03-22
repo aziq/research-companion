@@ -310,6 +310,42 @@ async def _streamyard_fetch(url: str) -> dict:
         Path(tmp_path).unlink(missing_ok=True)
 
 
+async def _pdf_fetch(url: str) -> dict:
+    """Download a PDF and extract text with pdfplumber."""
+    import io
+    import pdfplumber
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=60) as client:
+            resp = await client.get(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
+            )
+            resp.raise_for_status()
+            pdf_bytes = resp.content
+    except Exception as e:
+        logger.warning(f"PDF download failed for {url}: {e}")
+        return {"text": "", "title": url, "source_type": "unknown"}
+
+    try:
+        pages_text = []
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            title = (pdf.metadata or {}).get("Title") or url
+            for page in pdf.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    pages_text.append(page_text)
+        text = "\n\n".join(pages_text)
+    except Exception as e:
+        logger.warning(f"pdfplumber extraction failed for {url}: {e}")
+        return {"text": "", "title": url, "source_type": "unknown"}
+
+    if not text.strip():
+        logger.warning(f"PDF at {url} yielded no text — likely image-based; OCR not available")
+
+    return {"text": text[:MAX_CONTENT_CHARS], "title": title, "source_type": "article"}
+
+
 async def _generic_fetch(url: str) -> dict:
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
@@ -387,5 +423,8 @@ async def fetch_url(url: str) -> dict:
     if _domain_matches(domain, "twitter.com", "x.com", "t.co"):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _fetch_tweet, url)
+
+    if urlparse(url).path.lower().endswith(".pdf"):
+        return await _pdf_fetch(url)
 
     return await _generic_fetch(url)
